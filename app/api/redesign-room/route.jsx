@@ -3,16 +3,16 @@ import { storage } from "@/config/firebaseConfig";
 import { AiGeneratedImage } from "@/config/schema";
 import { getDownloadURL, ref, uploadString } from "firebase/storage";
 import { NextResponse } from "next/server";
-import Replicate from "replicate";
 import axios from "axios";
 
-// ✅ REQUIRED for Render / Vercel
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(req) {
+export async function POST(request) {
   try {
-    // ✅ Create Replicate client at RUNTIME (not build time)
+    // 🔥 CRITICAL: dynamic import (prevents build-time crash)
+    const { default: Replicate } = await import("replicate");
+
     const replicate = new Replicate({
       auth: process.env.REPLICATE_API_TOKEN,
     });
@@ -23,14 +23,19 @@ export async function POST(req) {
       designType,
       additionalReq,
       userEmail,
-    } = await req.json();
+    } = await request.json();
 
-    // Convert input image
+    if (!imageUrl || !roomType || !designType || !userEmail) {
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
+
     let inputImage;
     try {
       inputImage = await convertImageToBase64(imageUrl);
     } catch {
-      console.warn("⚠️ Base64 conversion failed, using raw URL");
       inputImage = imageUrl;
     }
 
@@ -51,13 +56,11 @@ export async function POST(req) {
 
     const base64Image = await convertImageToBase64(resultUrl);
 
-    // Upload to Firebase
     const fileName = `${Date.now()}.png`;
     const storageRef = ref(storage, "room-redesign/" + fileName);
     await uploadString(storageRef, base64Image, "data_url");
     const downloadUrl = await getDownloadURL(storageRef);
 
-    // Save DB record
     await db.insert(AiGeneratedImage).values({
       roomType,
       designType,
@@ -68,15 +71,14 @@ export async function POST(req) {
 
     return NextResponse.json({ result: downloadUrl });
   } catch (error) {
-    console.error("❌ API Error:", error);
+    console.error("redesign-room error:", error);
     return NextResponse.json(
-      { error: error.message || "Something went wrong" },
+      { error: "AI generation failed" },
       { status: 500 }
     );
   }
 }
 
-// Utility
 async function convertImageToBase64(imageUrl) {
   const resp = await axios.get(imageUrl, { responseType: "arraybuffer" });
   return (
