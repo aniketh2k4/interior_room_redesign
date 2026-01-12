@@ -13,7 +13,7 @@ import CustomLoading from './_components/CustomLoading'
 import AiOutputDialog from '../_components/AiOutputDialog'
 import { UserDetailContext } from '@/app/_context/UserDetailContext'
 import { db } from '@/config/db'
-import { Users } from '@/config/schema'   // ✅ correct import
+import { Users } from '@/config/schema'
 
 function CreateNew() {
   const { user } = useUser()
@@ -21,7 +21,6 @@ function CreateNew() {
   const [loading, setLoading] = useState(false)
   const [aiOutputImage, setAiOutputImage] = useState()
   const [openOutputDialog, setOpenOutputDialog] = useState(false)
-  const [closeDialog,setCloseDialog] = useState(false);
   const [orgImage, setOrgImage] = useState()
   const { userDetail, setUserDetail } = useContext(UserDetailContext)
 
@@ -30,7 +29,6 @@ function CreateNew() {
       ...prev,
       [fieldName]: value
     }))
-    console.log(formData)
   }
 
   const GenerateAiImage = async () => {
@@ -42,21 +40,26 @@ function CreateNew() {
     setLoading(true)
     try {
       const rawImageUrl = await SaveRawImageToFirebase()
-      const result = await axios.post('/api/redesign-room', {
-        imageUrl: rawImageUrl,
-        roomType: formData?.roomType,
-        designType: formData?.designType,
-        additionalReq: formData?.additionalReq,
-        userEmail: user?.primaryEmailAddress?.emailAddress,
-      })
-      console.log(result)
 
-      await updateUserCredits()   // ✅ safe now
+      // ✅ FIXED: call deployed backend using env variable
+      const result = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/redesign-room`,
+        {
+          imageUrl: rawImageUrl,
+          roomType: formData?.roomType,
+          designType: formData?.designType,
+          additionalReq: formData?.additionalReq,
+          userEmail: user?.primaryEmailAddress?.emailAddress,
+        }
+      )
+
+      await updateUserCredits()
 
       setAiOutputImage(result.data.result)
       setOpenOutputDialog(true)
     } catch (err) {
       console.error("Error generating AI image:", err)
+      alert("Failed to generate image. Please try again.")
     } finally {
       setLoading(false)
     }
@@ -67,10 +70,7 @@ function CreateNew() {
     const imageRef = ref(storage, 'room-redesign/' + fileName)
 
     await uploadBytes(imageRef, formData.image)
-    console.log('File Uploaded...')
-
     const downloadUrl = await getDownloadURL(imageRef)
-    console.log(downloadUrl)
     setOrgImage(downloadUrl)
     return downloadUrl
   }
@@ -81,16 +81,15 @@ function CreateNew() {
     const result = await db
       .update(Users)
       .set({
-        credits: (userDetail.credits || 0) - 1,  // ✅ safe subtraction
+        credits: (userDetail.credits || 0) - 1,
       })
       .returning({ id: Users.id })
 
     if (result?.length > 0) {
       setUserDetail(prev => ({
         ...prev,
-        credits: (prev?.credits || 0) - 1,  // ✅ update context safely
+        credits: (prev?.credits || 0) - 1,
       }))
-      return result[0].id
     }
   }
 
