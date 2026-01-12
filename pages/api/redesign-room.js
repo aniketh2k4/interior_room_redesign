@@ -2,17 +2,19 @@ import { db } from "@/config/db";
 import { storage } from "@/config/firebaseConfig";
 import { AiGeneratedImage } from "@/config/schema";
 import { getDownloadURL, ref, uploadString } from "firebase/storage";
-import { NextResponse } from "next/server";
+import Replicate from "replicate";
 import axios from "axios";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+/**
+ * Pages Router API
+ * This avoids App Router build-time execution issues with Replicate
+ */
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
-export async function POST(request) {
   try {
-    // 🔥 CRITICAL: dynamic import (prevents build-time crash)
-    const { default: Replicate } = await import("replicate");
-
     const replicate = new Replicate({
       auth: process.env.REPLICATE_API_TOKEN,
     });
@@ -23,15 +25,13 @@ export async function POST(request) {
       designType,
       additionalReq,
       userEmail,
-    } = await request.json();
+    } = req.body;
 
     if (!imageUrl || !roomType || !designType || !userEmail) {
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
-      );
+      return res.status(400).json({ error: "Missing required fields" });
     }
 
+    // Convert input image
     let inputImage;
     try {
       inputImage = await convertImageToBase64(imageUrl);
@@ -52,15 +52,20 @@ export async function POST(request) {
     );
 
     const resultUrl = Array.isArray(output) ? output[0] : output;
-    if (!resultUrl) throw new Error("No output from Replicate");
+    if (!resultUrl) {
+      throw new Error("No output from Replicate");
+    }
 
+    // Convert AI image to Base64
     const base64Image = await convertImageToBase64(resultUrl);
 
+    // Upload to Firebase
     const fileName = `${Date.now()}.png`;
     const storageRef = ref(storage, "room-redesign/" + fileName);
     await uploadString(storageRef, base64Image, "data_url");
     const downloadUrl = await getDownloadURL(storageRef);
 
+    // Save DB record
     await db.insert(AiGeneratedImage).values({
       roomType,
       designType,
@@ -69,16 +74,14 @@ export async function POST(request) {
       userEmail,
     });
 
-    return NextResponse.json({ result: downloadUrl });
+    return res.status(200).json({ result: downloadUrl });
   } catch (error) {
     console.error("redesign-room error:", error);
-    return NextResponse.json(
-      { error: "AI generation failed" },
-      { status: 500 }
-    );
+    return res.status(500).json({ error: "AI generation failed" });
   }
 }
 
+// Utility
 async function convertImageToBase64(imageUrl) {
   const resp = await axios.get(imageUrl, { responseType: "arraybuffer" });
   return (
