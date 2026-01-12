@@ -1,28 +1,53 @@
-import { db } from "../../../config/db.js";
-import { Users } from "../../../config/schema.js";
+import { db } from "@/config/db";
+import { Users } from "@/config/schema";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
-export async function POST(req) {
+// ✅ REQUIRED for App Router APIs with runtime logic
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-    const {user}=await req.json();
+export async function POST(request) {
+  try {
+    const body = await request.json();
+    const { user } = body;
 
-    
-    try{
-        //if user already exist?
-        const userInfo=await db.select().from(Users)
-        .where(eq(Users.email,user?.primaryEmailAddress.emailAddress));
-        console.log("User",userInfo);
-        //if not will add new user to DB
-        if(userInfo?.length==0)
-        {
-            const SaveResult=await db.insert(Users).values({name:user?.fullName,email:user?.primaryEmailAddress.emailAddress,imageUrl:user?.imageUrl}).returning({Users})
-            return NextResponse.json({'result':SaveResult[0].Users})
-        } 
-        return NextResponse.json({'result':userInfo[0]})   
+    if (!user?.primaryEmailAddress?.emailAddress) {
+      return NextResponse.json(
+        { error: "Invalid user data" },
+        { status: 400 }
+      );
     }
-    catch(e){
-        return NextResponse.json({error:e})
+
+    const email = user.primaryEmailAddress.emailAddress;
+
+    // 🔍 Check if user exists
+    const userInfo = await db
+      .select()
+      .from(Users)
+      .where(eq(Users.email, email));
+
+    // ➕ Create new user if not exists
+    if (!userInfo || userInfo.length === 0) {
+      const saveResult = await db
+        .insert(Users)
+        .values({
+          name: user.fullName,
+          email: email,
+          imageUrl: user.imageUrl,
+        })
+        .returning();
+
+      return NextResponse.json({ result: saveResult[0] });
     }
-    
+
+    // ✅ User already exists
+    return NextResponse.json({ result: userInfo[0] });
+  } catch (error) {
+    console.error("verify-user error:", error);
+    return NextResponse.json(
+      { error: "Failed to verify user" },
+      { status: 500 }
+    );
+  }
 }
