@@ -6,8 +6,7 @@ import {  PayPalButtons } from "@paypal/react-paypal-js";
 import { UserDetailContext } from "@/app/_context/UserDetailContext";
 import { useRouter } from "next/navigation";
 
-import { Users } from "@/config/schema";
-import { db } from "@/config/db";
+
 
 
 function BuyCredits() {
@@ -22,24 +21,33 @@ function BuyCredits() {
   const [selectedOption, setSelectedOption] = useState(null);
   const {userDetail,setUserDetail}=useContext(UserDetailContext);
   const router=useRouter();
-  const onPaymentSuccess=async()=>{
-    console.log("Payment Success...")
-    //update user credits in db
-    const result=await db.update(Users)
-    .set({
-        credits:userDetail?.credits+selectedOption?.credits
-    }).returning({id:Users.id});
+  const onPaymentSuccess = async () => {
+  try {
+    const res = await fetch("/api/update-credits", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        userId: userDetail?.id,
+        creditsToAdd: selectedOption?.credits,
+      }),
+    });
 
-    if(result)
-    {   
-        setUserDetail(prev=>({
-            ...prev,
-            credits:userDetail?.credits+selectedOption?.credits
-        }))
-        router.push('/dashboard');
+    const data = await res.json();
+
+    if (data.success) {
+      setUserDetail((prev) => ({
+        ...prev,
+        credits: prev.credits + selectedOption.credits,
+      }));
+      router.push("/dashboard");
     }
-
+  } catch (error) {
+    console.error("Payment success error:", error);
   }
+};
+
 
   return (
     <div>
