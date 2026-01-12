@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 "use client"
 import React, { useContext, useState } from 'react'
 import ImageSelection from './_components/ImageSelection'
@@ -12,8 +13,7 @@ import { useUser } from '@clerk/nextjs'
 import CustomLoading from './_components/CustomLoading'
 import AiOutputDialog from '../_components/AiOutputDialog'
 import { UserDetailContext } from '@/app/_context/UserDetailContext'
-import { db } from '@/config/db'
-import { Users } from '@/config/schema'
+
 
 function CreateNew() {
   const { user } = useUser()
@@ -76,22 +76,33 @@ function CreateNew() {
   }
 
   const updateUserCredits = async () => {
-    if (!userDetail) return
+  if (!userDetail) return;
 
-    const result = await db
-      .update(Users)
-      .set({
-        credits: (userDetail.credits || 0) - 1,
-      })
-      .returning({ id: Users.id })
+  try {
+    const res = await fetch("/api/update-credits", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        userId: userDetail.id,
+        creditsToAdd: -1, // deduct 1 credit
+      }),
+    });
 
-    if (result?.length > 0) {
-      setUserDetail(prev => ({
+    const data = await res.json();
+
+    if (data.success) {
+      setUserDetail((prev) => ({
         ...prev,
-        credits: (prev?.credits || 0) - 1,
-      }))
+        credits: prev.credits - 1,
+      }));
     }
+  } catch (error) {
+    console.error("Failed to update credits:", error);
   }
+};
+
 
   return (
     <div>
