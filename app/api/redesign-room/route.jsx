@@ -1,6 +1,3 @@
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
-
 import { db } from "@/config/db";
 import { storage } from "@/config/firebaseConfig";
 import { AiGeneratedImage } from "@/config/schema";
@@ -9,25 +6,31 @@ import { NextResponse } from "next/server";
 import Replicate from "replicate";
 import axios from "axios";
 
-const replicate = new Replicate({
-  auth: process.env.REPLICATE_API_TOKEN,
-});
+// ✅ REQUIRED for Render / Vercel
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-export async function POST(request) {
+export async function POST(req) {
   try {
+    // ✅ Create Replicate client at RUNTIME (not build time)
+    const replicate = new Replicate({
+      auth: process.env.REPLICATE_API_TOKEN,
+    });
+
     const {
       imageUrl,
       roomType,
       designType,
       additionalReq,
       userEmail,
-    } = await request.json();
+    } = await req.json();
 
-    // Convert image to Base64 (fallback to URL)
+    // Convert input image
     let inputImage;
     try {
-      inputImage = await ConvertImageToBase64(imageUrl);
+      inputImage = await convertImageToBase64(imageUrl);
     } catch {
+      console.warn("⚠️ Base64 conversion failed, using raw URL");
       inputImage = imageUrl;
     }
 
@@ -46,14 +49,15 @@ export async function POST(request) {
     const resultUrl = Array.isArray(output) ? output[0] : output;
     if (!resultUrl) throw new Error("No output from Replicate");
 
-    const base64Image = await ConvertImageToBase64(resultUrl);
+    const base64Image = await convertImageToBase64(resultUrl);
 
-    const fileName = Date.now() + ".png";
+    // Upload to Firebase
+    const fileName = `${Date.now()}.png`;
     const storageRef = ref(storage, "room-redesign/" + fileName);
     await uploadString(storageRef, base64Image, "data_url");
-
     const downloadUrl = await getDownloadURL(storageRef);
 
+    // Save DB record
     await db.insert(AiGeneratedImage).values({
       roomType,
       designType,
@@ -64,17 +68,19 @@ export async function POST(request) {
 
     return NextResponse.json({ result: downloadUrl });
   } catch (error) {
-    console.error("❌ API error:", error);
+    console.error("❌ API Error:", error);
     return NextResponse.json(
-      { error: error.message || "Internal Server Error" },
+      { error: error.message || "Something went wrong" },
       { status: 500 }
     );
   }
 }
 
 // Utility
-async function ConvertImageToBase64(imageUrl) {
+async function convertImageToBase64(imageUrl) {
   const resp = await axios.get(imageUrl, { responseType: "arraybuffer" });
-  const base64 = Buffer.from(resp.data).toString("base64");
-  return `data:image/png;base64,${base64}`;
+  return (
+    "data:image/png;base64," +
+    Buffer.from(resp.data).toString("base64")
+  );
 }
