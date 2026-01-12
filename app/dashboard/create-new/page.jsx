@@ -1,4 +1,3 @@
-export const dynamic = "force-dynamic";
 "use client"
 import React, { useContext, useState } from 'react'
 import ImageSelection from './_components/ImageSelection'
